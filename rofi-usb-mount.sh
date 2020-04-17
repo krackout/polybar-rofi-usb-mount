@@ -1,4 +1,6 @@
 #!/bin/bash
+# This is a fork of https://github.com/luyves/polybar-rofi-usb-mount
+# I wanted it to be generic, not polybar. It presents a menu to mount or unmount and also can locate usb disks without partitions (super-floppy structure) which the original couldn't.
 
 usbcheck(){ \
     mounteddrives="$(lsblk -rpo "name,type,size,mountpoint" | grep -v 'sda' | awk '$2=="part"&&$4!=""{printf "%s (%s)\t  ",$1,$3}')"
@@ -14,33 +16,37 @@ usbcheck(){ \
 }
 
 mountusb(){ \
-    chosen=$(echo "$usbdrives" | rofi -dmenu -show run -lines 5 -opacity "85" -bw 0 -width 30 -padding 20 -i -p "Mount which drive?" | awk '{print $1}')
+    chosen=$(echo "$usbdrives" | rofi -dmenu -show run -lines 5 -opacity "85" -bw 0 -width 30 -padding 20 -i -p "Mount drive" | awk '{print $1}')
     mountpoint=$(udisksctl mount --no-user-interaction -b "$chosen" 2>/dev/null) && notify-send "💻 USB mounting" "$chosen mounted to $mountpoint" && exit 0
 
 }
 
 umountusb(){ \
-    chosen=$(echo "$mounteddrives" | rofi -dmenu -show run -lines 5 -opacity "85" -bw 0 -width 30 -padding 20 -i -p "Unmount which drive?" | awk '{print $1}')
-    mountpoint=$(udisksctl unmount --no-user-interaction -b "$chosen" 2>/dev/null) && notify-send "💻 USB unmounting" "$chosen mounted" && exit 0
-    udisksctl power-off --no-user-interaction -b "$chosen"
+    chosen=$(echo "$mounteddrives" | rofi -dmenu -show run -lines 5 -opacity "85" -bw 0 -width 60 -padding 20 -i -p "Unmount drive" | awk '{print $1}')
+    mountpoint=$(udisksctl unmount --no-user-interaction -b "$chosen" 2>/dev/null) && notify-send "💻 USB unmounting" "$chosen unmounted" && exit 0
+    udisksctl unmount --no-user-interaction -b "$chosen"
 }
 
 umountall(){ \
-    for chosen in $(echo $(lsblk -rpo "name,type,size,mountpoint" | grep -v 'sda' | awk '$2=="part"&&$4!=""{printf "%s\n",$1}')); do
+	for chosen in $(echo $(lsblk -rnpo name,size,mountpoint,fstype | grep -v 'sda' | awk 'NF==4 {print $1}')); do
         udisksctl unmount --no-user-interaction -b "$chosen"
-        udisksctl power-off --no-user-interaction -b "$chosen"
     done
 }
 
+usbdrives="$(lsblk -rnpo name,size,mountpoint,fstype | grep -v 'sda' | awk 'NF==3 {print $1, $2, $3}')"
+mounteddrives="$(lsblk -rnpo name,size,mountpoint,fstype | grep -v 'sda' | awk 'NF==4 {print $1, $2, $3, $4}')"
 
-usbdrives="$(lsblk -rpo "name,type,size,mountpoint" | grep -v 'sda' | awk '$2=="part"&&$4==""{printf "%s (%s)\n",$1,$3}')"
-mounteddrives="$(lsblk -rpo "name,type,size,mountpoint" | grep -v 'sda' | awk '$2=="part"&&$4!=""{printf "%s (%s)\n",$1,$3}')"
+menu(){ \
+	epilogimenu=$(echo -e "Mount\nUmount\nUmountAll" | rofi -dmenu -show run -lines 3 -opacity "85" -bw 0 -width 30 -padding 20 -i -p "Επιλογή" | awk '{print $1}')
+}
 
-case "$1" in
-    --check)
+menu
+
+case $epilogimenu in
+    check)
         usbcheck
         ;;
-    --mount)
+    Mount)
         if [ $(echo "$usbdrives" | wc -w) -gt 0 ]; then
             notify-send "USB drive(s) detected."
             mountusb
@@ -48,7 +54,7 @@ case "$1" in
             notify-send "No USB drive(s) detected." && exit
         fi
         ;;
-    --umount)
+    Umount)
         if [ $(echo "$mounteddrives" | wc -w) -gt 0 ]; then
             notify-send "USB drive(s) detected."
             umountusb
@@ -56,7 +62,7 @@ case "$1" in
             notify-send "No USB drive(s) to unmount." && exit
         fi
         ;;
-    --umount-all)
+    UmountAll)
         if [ $(echo "$mounteddrives" | wc -w) -gt 0 ]; then
             notify-send "Unmounting all USB drives."
             umountall
